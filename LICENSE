@@ -1,0 +1,32 @@
+Copyright (c) 2026 Abidin Alkilinc
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+
+---
+
+CONTRIBUTION POLICY
+
+This project welcomes and encourages contributions. If you find this
+plugin useful and make improvements, please consider contributing them
+back to the original project via pull requests at:
+
+  https://github.com/imabidin/woocommerce-order-flow-control
+
+While the GPL grants you the right to fork and redistribute, the author
+kindly asks that improvements be shared with the community rather than
+maintained as separate forks. This helps all users benefit from bug fixes,
+new features, and security updates.
+
+All contributions are subject to review and must be compatible with the
+GPL-2.0+ license.

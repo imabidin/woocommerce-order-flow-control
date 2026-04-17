@@ -97,25 +97,6 @@ class WOFC_Settings extends WC_Settings_Page {
 		$all_statuses = wc_get_order_statuses();
 
 		?>
-		<style>
-			.wofc-matrix-wrap { overflow-x: auto; margin-top: 4px; }
-			table.wofc-matrix { border-collapse: collapse; min-width: 600px; }
-			table.wofc-matrix th,
-			table.wofc-matrix td { padding: 8px 6px; border: 1px solid #e0e0e0; text-align: center; vertical-align: middle; }
-			table.wofc-matrix thead th { background: #f8f9fa; font-size: 12px; font-weight: 600; white-space: nowrap; }
-			table.wofc-matrix thead th:first-child { text-align: left; min-width: 160px; }
-			table.wofc-matrix tbody td:first-child { text-align: left; font-weight: 600; white-space: nowrap; background: #f8f9fa; }
-			table.wofc-matrix tbody tr:nth-child(even) { background: #fafafa; }
-			table.wofc-matrix tbody tr:nth-child(even) td:first-child { background: #f0f0f1; }
-			table.wofc-matrix tbody tr.wofc-row-locked { background: #fef8ee; }
-			table.wofc-matrix tbody tr.wofc-row-locked:nth-child(even) { background: #fdf3e1; }
-			table.wofc-matrix tbody tr.wofc-row-locked td:first-child { background: #fcefd4; border-left: 3px solid #dba617; }
-			table.wofc-matrix .wofc-self { color: #c0c0c0; }
-			table.wofc-matrix input[type="checkbox"] { margin: 0; }
-			table.wofc-matrix .wofc-lock-col { background: #f8f9fa; border-right: 2px solid #c3c4c7; }
-			table.wofc-matrix thead .wofc-lock-col { font-size: 11px; min-width: 70px; }
-			table.wofc-matrix tbody tr.wofc-row-locked .wofc-lock-col { background: #fcefd4; }
-		</style>
 		<tr valign="top">
 			<td class="forminp" style="padding-left: 0; padding-right: 0;">
 				<div class="wofc-matrix-wrap">
@@ -170,17 +151,6 @@ class WOFC_Settings extends WC_Settings_Page {
 					</tbody>
 				</table>
 				</div>
-				<script>
-					document.addEventListener( 'change', function( e ) {
-						if ( ! e.target.classList.contains( 'wofc-lock-toggle' ) ) return;
-						var row = e.target.closest( 'tr' );
-						if ( e.target.checked ) {
-							row.classList.add( 'wofc-row-locked' );
-						} else {
-							row.classList.remove( 'wofc-row-locked' );
-						}
-					});
-				</script>
 				<p class="description" style="margin-top: 8px;">
 					<?php esc_html_e( 'Enable "Rollback Lock" to restrict a status — locked statuses can only transition to checked targets. A locked status with no targets is a dead end (e.g. Refunded). Unlocked rows are unrestricted.', 'wofc' ); ?>
 				</p>
@@ -201,24 +171,45 @@ class WOFC_Settings extends WC_Settings_Page {
 			return;
 		}
 
+		if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_key( wp_unslash( $_POST['_wpnonce'] ) ), 'woocommerce-settings' ) ) {
+			return;
+		}
+
 		$valid_statuses = array_map(
 			[ 'WOFC_Transition_Manager', 'clean_status' ],
 			array_keys( wc_get_order_statuses() )
 		);
 
-		$lock_flags = isset( $_POST['wofc_lock'] ) ? wp_unslash( $_POST['wofc_lock'] ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$matrix     = isset( $_POST['wofc_matrix'] ) ? wp_unslash( $_POST['wofc_matrix'] ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$rules      = [];
+		$lock_flags_raw = isset( $_POST['wofc_lock'] ) ? (array) wp_unslash( $_POST['wofc_lock'] ) : [];
+		$matrix_raw     = isset( $_POST['wofc_matrix'] ) ? (array) wp_unslash( $_POST['wofc_matrix'] ) : [];
+
+		$lock_flags = [];
+		foreach ( $lock_flags_raw as $k => $v ) {
+			$lock_flags[ sanitize_key( $k ) ] = '1';
+		}
+
+		$matrix = [];
+		foreach ( $matrix_raw as $from_key => $targets ) {
+			if ( ! is_array( $targets ) ) {
+				continue;
+			}
+			$clean_from = sanitize_key( $from_key );
+			$matrix[ $clean_from ] = [];
+			foreach ( array_keys( $targets ) as $to_key ) {
+				$matrix[ $clean_from ][ sanitize_key( $to_key ) ] = '1';
+			}
+		}
+
+		$rules = [];
 
 		foreach ( $valid_statuses as $from ) {
 			if ( ! isset( $lock_flags[ $from ] ) ) {
-				continue; // Not locked → unrestricted, skip
+				continue;
 			}
 
 			$targets = [];
 			if ( isset( $matrix[ $from ] ) && is_array( $matrix[ $from ] ) ) {
 				foreach ( array_keys( $matrix[ $from ] ) as $to ) {
-					$to = sanitize_text_field( $to );
 					if ( in_array( $to, $valid_statuses, true ) && $to !== $from ) {
 						$targets[] = $to;
 					}
@@ -228,7 +219,7 @@ class WOFC_Settings extends WC_Settings_Page {
 			$rules[ $from ] = $targets;
 		}
 
-		update_option( WOFC_Transition_Manager::OPTION_TRANSITIONS, $rules );
+		update_option( WOFC_Transition_Manager::OPTION_TRANSITIONS, $rules, false );
 		WOFC_Transition_Manager::flush_cache();
 
 		/**

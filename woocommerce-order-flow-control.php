@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Order Flow Control
  * Plugin URI:  https://github.com/imabidin/woocommerce-order-flow-control
  * Description: Enforces one-way order status transitions for accounting integrity. Once an order reaches a locked status (e.g. "processing"), it can only move forward. Refunds remain possible at any stage.
- * Version:     2.1.0
+ * Version:     3.0.0
  * Author:      Abidin Alkilinc
  * Author URI:  https://www.alkilinc.de
  * License:     GPL-2.0+
@@ -18,7 +18,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WOFC_VERSION',  '2.1.0' );
+define( 'WOFC_VERSION',  '3.0.0' );
 define( 'WOFC_FILE',     __FILE__ );
 define( 'WOFC_PATH',     plugin_dir_path( __FILE__ ) );
 define( 'WOFC_BASENAME', plugin_basename( __FILE__ ) );

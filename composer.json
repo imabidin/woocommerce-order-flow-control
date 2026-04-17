@@ -1,0 +1,22 @@
+{
+    "name": "imabidin/woocommerce-order-flow-control",
+    "description": "Enforces one-way order status transitions for WooCommerce.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6",
+        "brain/monkey": "^2.6",
+        "yoast/phpunit-polyfills": "^1.1"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WOFC\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

@@ -16,16 +16,16 @@ class WOFC_Transition_Manager {
 	/** @var array|null Runtime cache for transition rules. */
 	private static $cache = null;
 
-	/** @var bool Guard flag to prevent infinite loops during revert. */
-	private static $reverting = false;
+	/** @var bool Guard flag to prevent re-entrant calls during prevention. */
+	private static $preventing = false;
 
 	/**
 	 * Register all enforcement hooks.
 	 *
-	 * @since 2.0.0
+	 * @since 3.0.0
 	 */
 	public static function init() {
-		add_action( 'woocommerce_order_status_changed', [ __CLASS__, 'enforce_transition' ], 10, 3 );
+		add_action( 'woocommerce_before_order_object_save', [ __CLASS__, 'prevent_transition' ], 5, 2 );
 		add_filter( 'woocommerce_rest_pre_insert_shop_order_object', [ __CLASS__, 'enforce_rest_transition' ], 10, 2 );
 		add_filter( 'wc_order_statuses', [ __CLASS__, 'filter_order_statuses' ], 99 );
 	}
@@ -37,7 +37,7 @@ class WOFC_Transition_Manager {
 	 */
 	public static function set_defaults() {
 		if ( false === get_option( self::OPTION_TRANSITIONS ) ) {
-			update_option( self::OPTION_TRANSITIONS, self::get_default_transitions(), true );
+			update_option( self::OPTION_TRANSITIONS, self::get_default_transitions(), false );
 		}
 		if ( false === get_option( self::OPTION_ENABLED ) ) {
 			update_option( self::OPTION_ENABLED, 'yes', true );
@@ -80,7 +80,7 @@ class WOFC_Transition_Manager {
 		/**
 		 * Filter the transition rules at runtime.
 		 *
-		 * @since 1.0.0
+		 * @since 2.0.0
 		 * @param array<string, string[]> $rules Transition rules.
 		 */
 		self::$cache = apply_filters( 'wofc_allowed_transitions', $rules );
@@ -188,51 +188,87 @@ class WOFC_Transition_Manager {
 	// -------------------------------------------------------------------------
 
 	/**
-	 * Programmatic block: revert invalid status transitions.
+	 * Prevent invalid status transitions before they are committed to the database.
 	 *
-	 * @since 1.0.0
-	 * @param int    $order_id
-	 * @param string $from
-	 * @param string $to
+	 * Hooks into woocommerce_before_order_object_save which fires before the
+	 * data store persists the order. If the transition is not allowed, the status
+	 * is reverted on the in-memory object and the pending status_transition is
+	 * cleared so no downstream hooks (emails, stock, timestamps) fire.
+	 *
+	 * @since 3.0.0
+	 * @param WC_Abstract_Order $order      Order object being saved.
+	 * @param mixed             $data_store Data store instance.
 	 */
-	public static function enforce_transition( $order_id, $from, $to ) {
-		if ( self::$reverting ) {
+	public static function prevent_transition( $order, $data_store = null ) {
+		if ( self::$preventing ) {
 			return;
 		}
 
-		if ( self::is_transition_allowed( $from, $to, $order_id ) ) {
+		if ( ! $order instanceof WC_Order || ! $order->get_id() ) {
 			return;
 		}
 
-		self::$reverting = true;
-
-		$order = wc_get_order( $order_id );
-		if ( $order ) {
-			$order->set_status( $from, sprintf(
-				/* translators: %s: target status name */
-				__( 'Status change to "%s" blocked by Order Flow Control — only forward transitions allowed.', 'wofc' ),
-				wc_get_order_status_name( $to )
-			) );
-			$order->save();
+		$changes = $order->get_changes();
+		if ( ! isset( $changes['status'] ) ) {
+			return;
 		}
 
-		self::$reverting = false;
+		$to   = self::clean_status( $changes['status'] );
+		$from = self::get_original_status( $order );
+
+		if ( ! $from || $from === $to ) {
+			return;
+		}
+
+		if ( self::is_transition_allowed( $from, $to, $order->get_id() ) ) {
+			return;
+		}
+
+		// Revert the status on the object before it reaches the data store.
+		self::$preventing = true;
+		$order->set_status( $from );
+		self::$preventing = false;
+
+		// Clear the pending status_transition so no post-save hooks fire.
+		self::clear_status_transition( $order );
+
+		$order->add_order_note( sprintf(
+			/* translators: 1: source status name, 2: target status name */
+			__( 'Status change from "%1$s" to "%2$s" blocked by Order Flow Control — only forward transitions allowed.', 'wofc' ),
+			wc_get_order_status_name( $from ),
+			wc_get_order_status_name( $to )
+		) );
+
+		// Audit log (P1.3).
+		if ( function_exists( 'wc_get_logger' ) ) {
+			wc_get_logger()->warning(
+				sprintf(
+					'Blocked transition on order #%d: %s → %s (user #%d, context: %s)',
+					$order->get_id(),
+					$from,
+					$to,
+					get_current_user_id(),
+					self::detect_context()
+				),
+				[ 'source' => 'wofc' ]
+			);
+		}
 
 		/**
-		 * Fired when a status transition is blocked and reverted.
+		 * Fired when a status transition is prevented.
 		 *
 		 * @since 2.0.0
 		 * @param int    $order_id
-		 * @param string $from Original status.
-		 * @param string $to   Attempted target status.
+		 * @param string $from Original status (clean slug).
+		 * @param string $to   Attempted target status (clean slug).
 		 */
-		do_action( 'wofc_transition_blocked', $order_id, $from, $to );
+		do_action( 'wofc_transition_blocked', $order->get_id(), $from, $to );
 	}
 
 	/**
 	 * REST API block: return WP_Error for invalid transitions.
 	 *
-	 * @since 1.0.0
+	 * @since 2.0.0
 	 * @param WC_Order        $order
 	 * @param WP_REST_Request $request
 	 * @return WC_Order|WP_Error
@@ -246,6 +282,19 @@ class WOFC_Transition_Manager {
 		$to   = self::clean_status( $request['status'] );
 
 		if ( ! self::is_transition_allowed( $from, $to, $order->get_id() ) ) {
+			if ( function_exists( 'wc_get_logger' ) ) {
+				wc_get_logger()->warning(
+					sprintf(
+						'Blocked REST transition on order #%d: %s → %s (user #%d)',
+						$order->get_id(),
+						$from,
+						$to,
+						get_current_user_id()
+					),
+					[ 'source' => 'wofc' ]
+				);
+			}
+
 			return new WP_Error(
 				'wofc_invalid_transition',
 				sprintf(
@@ -264,7 +313,7 @@ class WOFC_Transition_Manager {
 	/**
 	 * Admin UI: filter the status dropdown to only show allowed transitions.
 	 *
-	 * @since 1.0.0
+	 * @since 2.0.0
 	 * @param array $statuses
 	 * @return array
 	 */
@@ -309,5 +358,69 @@ class WOFC_Transition_Manager {
 		}
 
 		return $filtered;
+	}
+
+	// -------------------------------------------------------------------------
+	// Internal helpers
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Read the original (pre-change) status from the order's internal data store.
+	 *
+	 * Uses Closure::bind to access WC_Data::$data['status'] which holds the
+	 * value loaded from the database, unaffected by set_prop() changes.
+	 *
+	 * @since 3.0.0
+	 * @param WC_Order $order
+	 * @return string|null Clean status slug, or null if unavailable.
+	 */
+	private static function get_original_status( $order ) {
+		$original = Closure::bind( function () {
+			return $this->data['status'] ?? null;
+		}, $order, \WC_Data::class )();
+
+		return $original ? self::clean_status( $original ) : null;
+	}
+
+	/**
+	 * Clear the pending status_transition on the order object.
+	 *
+	 * This prevents WC_Order::status_transition() from firing any post-save
+	 * hooks (emails, woocommerce_order_status_changed, etc.) for a transition
+	 * that was blocked.
+	 *
+	 * @since 3.0.0
+	 * @param WC_Order $order
+	 */
+	private static function clear_status_transition( $order ) {
+		Closure::bind( function () {
+			$this->status_transition = false;
+		}, $order, \WC_Order::class )();
+	}
+
+	/**
+	 * Classify the current request context for logging.
+	 *
+	 * @since 3.0.0
+	 * @return string One of: cli, cron, ajax, rest, admin, frontend.
+	 */
+	private static function detect_context() {
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			return 'cli';
+		}
+		if ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) {
+			return 'cron';
+		}
+		if ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) {
+			return 'ajax';
+		}
+		if ( function_exists( 'wp_is_json_request' ) && wp_is_json_request() ) {
+			return 'rest';
+		}
+		if ( is_admin() ) {
+			return 'admin';
+		}
+
+		return 'frontend';
 	}
 }

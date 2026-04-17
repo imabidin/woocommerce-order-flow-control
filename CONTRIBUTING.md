@@ -37,7 +37,7 @@ Danke für dein Interesse an diesem Projekt!
 
 - Teste auf einer Staging-Umgebung
 - Prüfe verschiedene Order-Status-Kombinationen
-- Standalone-Tests: `php tests/test-transitions.php`
+- Unit-Tests: `composer install && composer test`
 
 ## Code of Conduct
 

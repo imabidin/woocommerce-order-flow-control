@@ -1,0 +1,17 @@
+.wofc-matrix-wrap { overflow-x: auto; margin-top: 4px; }
+table.wofc-matrix { border-collapse: collapse; min-width: 600px; }
+table.wofc-matrix th,
+table.wofc-matrix td { padding: 8px 6px; border: 1px solid #e0e0e0; text-align: center; vertical-align: middle; }
+table.wofc-matrix thead th { background: #f8f9fa; font-size: 12px; font-weight: 600; white-space: nowrap; }
+table.wofc-matrix thead th:first-child { text-align: left; min-width: 160px; }
+table.wofc-matrix tbody td:first-child { text-align: left; font-weight: 600; white-space: nowrap; background: #f8f9fa; }
+table.wofc-matrix tbody tr:nth-child(even) { background: #fafafa; }
+table.wofc-matrix tbody tr:nth-child(even) td:first-child { background: #f0f0f1; }
+table.wofc-matrix tbody tr.wofc-row-locked { background: #fef8ee; }
+table.wofc-matrix tbody tr.wofc-row-locked:nth-child(even) { background: #fdf3e1; }
+table.wofc-matrix tbody tr.wofc-row-locked td:first-child { background: #fcefd4; border-left: 3px solid #dba617; }
+table.wofc-matrix .wofc-self { color: #c0c0c0; }
+table.wofc-matrix input[type="checkbox"] { margin: 0; }
+table.wofc-matrix .wofc-lock-col { background: #f8f9fa; border-right: 2px solid #c3c4c7; }
+table.wofc-matrix thead .wofc-lock-col { font-size: 11px; min-width: 70px; }
+table.wofc-matrix tbody tr.wofc-row-locked .wofc-lock-col { background: #fcefd4; }

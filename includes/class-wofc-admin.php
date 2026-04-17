@@ -21,6 +21,7 @@ class WOFC_Admin {
 		add_action( 'admin_notices', [ __CLASS__, 'show_blocked_notice' ] );
 		add_action( 'admin_notices', [ __CLASS__, 'show_bulk_blocked_notice' ] );
 		add_action( 'wofc_transition_blocked', [ __CLASS__, 'set_blocked_redirect' ], 10, 3 );
+		add_action( 'admin_enqueue_scripts', [ __CLASS__, 'enqueue_settings_assets' ] );
 
 		add_filter( 'plugin_action_links_' . WOFC_BASENAME, [ __CLASS__, 'add_plugin_action_links' ] );
 
@@ -60,7 +61,13 @@ class WOFC_Admin {
 	 * @param string $to
 	 */
 	public static function set_blocked_redirect( $order_id, $from, $to ) {
-		if ( ! is_admin() || wp_doing_ajax() || defined( 'REST_REQUEST' ) ) {
+		if ( ! is_admin() || wp_doing_ajax() ) {
+			return;
+		}
+		if ( function_exists( 'wp_is_serving_rest_request' ) && wp_is_serving_rest_request() ) {
+			return;
+		}
+		if ( function_exists( 'wp_is_json_request' ) && wp_is_json_request() ) {
 			return;
 		}
 
@@ -141,6 +148,35 @@ class WOFC_Admin {
 				),
 				$count
 			) )
+		);
+	}
+
+	/**
+	 * Enqueue CSS/JS for the settings tab.
+	 *
+	 * @since 3.0.0
+	 * @param string $hook Current admin page hook.
+	 */
+	public static function enqueue_settings_assets( $hook ) {
+		if ( 'woocommerce_page_wc-settings' !== $hook ) {
+			return;
+		}
+		if ( ! isset( $_GET['tab'] ) || 'wofc' !== $_GET['tab'] ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return;
+		}
+
+		wp_enqueue_style(
+			'wofc-settings',
+			plugins_url( 'assets/admin/settings.css', WOFC_FILE ),
+			[],
+			WOFC_VERSION
+		);
+		wp_enqueue_script(
+			'wofc-settings',
+			plugins_url( 'assets/admin/settings.js', WOFC_FILE ),
+			[],
+			WOFC_VERSION,
+			true
 		);
 	}
 

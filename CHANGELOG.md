@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.0.0] - 2026-04-18
+
+### Changed
+- **Prevention instead of revert**: Switched from `woocommerce_order_status_changed` (post-change revert) to `woocommerce_before_order_object_save` (pre-save prevention). Blocked transitions no longer trigger emails, stock adjustments, or timestamp changes.
+- **Settings save hardening**: Added explicit nonce verification, sanitized all POST keys with `sanitize_key()`, removed `phpcs:ignore` comments
+- **REST detection**: Replaced `defined('REST_REQUEST')` with `wp_is_serving_rest_request()` / `wp_is_json_request()`
+- **Asset loading**: Moved inline CSS/JS from settings page to external files (`assets/admin/settings.css`, `assets/admin/settings.js`) with proper `wp_enqueue_style`/`wp_enqueue_script`
+- **Option autoload**: Transition rules option set to `autoload=false` (only loaded when needed)
+
+### Added
+- **Audit logging**: Every blocked transition is logged via `wc_get_logger()` (source: `wofc`) with order ID, from/to status, user ID, and request context
+- **Request context detection**: `detect_context()` helper classifies requests as cli, cron, ajax, rest, admin, or frontend
+- **Real test suite**: PHPUnit + Brain Monkey tests that exercise the actual `WOFC_Transition_Manager` class (replaces standalone pseudo-tests)
+- **WordPress.org readme**: Added `readme.txt` in standard WordPress.org format
+
+### Removed
+- `enforce_transition()` method and `$reverting` guard flag (replaced by `prevent_transition()`)
+- `woocommerce_order_status_changed` hook registration (replaced by `woocommerce_before_order_object_save`)
+- Standalone test file `tests/test-transitions.php`
+
+### Technical
+- New methods: `prevent_transition()`, `get_original_status()`, `clear_status_transition()`, `detect_context()`
+- Uses `Closure::bind` to read original status from `WC_Data::$data` and clear `WC_Order::$status_transition`
+- REST API enforcement also logs blocked attempts via `wc_get_logger()`
+
 ## [2.1.0] - 2026-04-17
 
 ### Added

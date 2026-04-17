@@ -72,7 +72,7 @@ class WOFC_Settings extends WC_Settings_Page {
 			[
 				'title' => __( 'Transition Rules', 'wofc' ),
 				'type'  => 'title',
-				'desc'  => __( 'Check the allowed transitions for each status. Rows without any checkboxes are unrestricted.', 'wofc' ),
+				'desc'  => __( 'Use "Rollback Lock" to restrict a status. Locked statuses can only move to checked targets. Unlocked statuses are unrestricted.', 'wofc' ),
 				'id'    => 'wofc_transitions_section',
 			],
 			[
@@ -112,6 +112,9 @@ class WOFC_Settings extends WC_Settings_Page {
 			table.wofc-matrix tbody tr.wofc-row-locked td:first-child { background: #fcefd4; border-left: 3px solid #dba617; }
 			table.wofc-matrix .wofc-self { color: #c0c0c0; }
 			table.wofc-matrix input[type="checkbox"] { margin: 0; }
+			table.wofc-matrix .wofc-lock-col { background: #f8f9fa; border-right: 2px solid #c3c4c7; }
+			table.wofc-matrix thead .wofc-lock-col { font-size: 11px; min-width: 70px; }
+			table.wofc-matrix tbody tr.wofc-row-locked .wofc-lock-col { background: #fcefd4; }
 		</style>
 		<tr valign="top">
 			<td class="forminp" style="padding-left: 0; padding-right: 0;">
@@ -120,6 +123,7 @@ class WOFC_Settings extends WC_Settings_Page {
 					<thead>
 						<tr>
 							<th><?php esc_html_e( 'From ↓ / To →', 'wofc' ); ?></th>
+							<th class="wofc-lock-col"><?php esc_html_e( 'Rollback Lock', 'wofc' ); ?></th>
 							<?php foreach ( $all_statuses as $slug => $label ) : ?>
 								<th><?php echo esc_html( $label ); ?></th>
 							<?php endforeach; ?>
@@ -132,10 +136,17 @@ class WOFC_Settings extends WC_Settings_Page {
 							$is_locked = array_key_exists( $from, $rules );
 							$row_class = $is_locked ? 'wofc-row-locked' : '';
 						?>
-						<tr class="<?php echo esc_attr( $row_class ); ?>">
+						<tr class="<?php echo esc_attr( $row_class ); ?>" data-status="<?php echo esc_attr( $from ); ?>">
 							<td>
 								<?php echo esc_html( $from_label ); ?>
-								<input type="hidden" name="wofc_locked_statuses[]" value="<?php echo esc_attr( $from ); ?>" />
+							</td>
+							<td class="wofc-lock-col">
+								<input type="checkbox"
+									name="wofc_lock[<?php echo esc_attr( $from ); ?>]"
+									value="1"
+									class="wofc-lock-toggle"
+									<?php checked( $is_locked ); ?>
+								/>
 							</td>
 							<?php foreach ( $all_statuses as $to_slug => $to_label ) :
 								$to      = WOFC_Transition_Manager::clean_status( $to_slug );
@@ -159,8 +170,19 @@ class WOFC_Settings extends WC_Settings_Page {
 					</tbody>
 				</table>
 				</div>
+				<script>
+					document.addEventListener( 'change', function( e ) {
+						if ( ! e.target.classList.contains( 'wofc-lock-toggle' ) ) return;
+						var row = e.target.closest( 'tr' );
+						if ( e.target.checked ) {
+							row.classList.add( 'wofc-row-locked' );
+						} else {
+							row.classList.remove( 'wofc-row-locked' );
+						}
+					});
+				</script>
 				<p class="description" style="margin-top: 8px;">
-					<?php esc_html_e( 'Check the boxes to allow a transition. Rows without any checkboxes are unrestricted.', 'wofc' ); ?>
+					<?php esc_html_e( 'Enable "Rollback Lock" to restrict a status — locked statuses can only transition to checked targets. A locked status with no targets is a dead end (e.g. Refunded). Unlocked rows are unrestricted.', 'wofc' ); ?>
 				</p>
 			</td>
 		</tr>
@@ -184,27 +206,22 @@ class WOFC_Settings extends WC_Settings_Page {
 			array_keys( wc_get_order_statuses() )
 		);
 
-		$locked  = isset( $_POST['wofc_locked_statuses'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['wofc_locked_statuses'] ) ) : [];
-		$matrix  = isset( $_POST['wofc_matrix'] ) ? wp_unslash( $_POST['wofc_matrix'] ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-		$rules   = [];
+		$lock_flags = isset( $_POST['wofc_lock'] ) ? wp_unslash( $_POST['wofc_lock'] ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$matrix     = isset( $_POST['wofc_matrix'] ) ? wp_unslash( $_POST['wofc_matrix'] ) : []; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$rules      = [];
 
-		foreach ( $locked as $from ) {
-			$from = sanitize_text_field( $from );
-
-			if ( ! in_array( $from, $valid_statuses, true ) ) {
-				continue;
-			}
-
-			// No checkboxes checked = unrestricted, skip this status
-			if ( ! isset( $matrix[ $from ] ) || ! is_array( $matrix[ $from ] ) ) {
-				continue;
+		foreach ( $valid_statuses as $from ) {
+			if ( ! isset( $lock_flags[ $from ] ) ) {
+				continue; // Not locked → unrestricted, skip
 			}
 
 			$targets = [];
-			foreach ( array_keys( $matrix[ $from ] ) as $to ) {
-				$to = sanitize_text_field( $to );
-				if ( in_array( $to, $valid_statuses, true ) && $to !== $from ) {
-					$targets[] = $to;
+			if ( isset( $matrix[ $from ] ) && is_array( $matrix[ $from ] ) ) {
+				foreach ( array_keys( $matrix[ $from ] ) as $to ) {
+					$to = sanitize_text_field( $to );
+					if ( in_array( $to, $valid_statuses, true ) && $to !== $from ) {
+						$targets[] = $to;
+					}
 				}
 			}
 

@@ -139,6 +139,82 @@ assert_allowed( 'processing', 'in-production', $passed, $failed );
 assert_allowed( 'ready-production', 'completed', $passed, $failed );
 echo "\n";
 
+// --- Test 9: Save logic — Rollback Lock preserves dead ends ---
+echo "Test 9: Save logic — Rollback Lock preserves dead-end statuses\n";
+
+function simulate_save( $lock_flags, $matrix ) {
+	$valid_statuses = ['pending', 'on-hold', 'processing', 'ready-production', 'in-production', 'completed', 'refunded', 'cancelled', 'failed'];
+	$rules = [];
+	foreach ( $valid_statuses as $from ) {
+		if ( ! isset( $lock_flags[ $from ] ) ) {
+			continue;
+		}
+		$targets = [];
+		if ( isset( $matrix[ $from ] ) && is_array( $matrix[ $from ] ) ) {
+			foreach ( array_keys( $matrix[ $from ] ) as $to ) {
+				if ( in_array( $to, $valid_statuses, true ) && $to !== $from ) {
+					$targets[] = $to;
+				}
+			}
+		}
+		$rules[ $from ] = $targets;
+	}
+	return $rules;
+}
+
+// 9a: Locked with no targets = dead end (preserved)
+$rules = simulate_save(
+	[ 'refunded' => '1', 'completed' => '1' ],
+	[ 'completed' => [ 'refunded' => '1' ] ]
+);
+if ( array_key_exists( 'refunded', $rules ) && $rules['refunded'] === [] ) {
+	echo "  ✓ Rollback Lock + no targets = dead end preserved\n";
+	$passed++;
+} else {
+	echo "  ✗ FAIL: refunded should be dead end but was removed or has targets\n";
+	$failed++;
+}
+
+// 9b: No Rollback Lock = not in rules (unrestricted)
+$rules = simulate_save(
+	[ 'completed' => '1' ],
+	[ 'completed' => [ 'refunded' => '1' ] ]
+);
+if ( ! array_key_exists( 'refunded', $rules ) ) {
+	echo "  ✓ No Rollback Lock = not in rules (unrestricted)\n";
+	$passed++;
+} else {
+	echo "  ✗ FAIL: refunded without Rollback Lock should not be in rules\n";
+	$failed++;
+}
+
+// 9c: Locked with targets = normal locked status
+$rules = simulate_save(
+	[ 'processing' => '1' ],
+	[ 'processing' => [ 'completed' => '1', 'refunded' => '1' ] ]
+);
+if ( array_key_exists( 'processing', $rules ) && $rules['processing'] === [ 'completed', 'refunded' ] ) {
+	echo "  ✓ Rollback Lock + targets = locked with allowed transitions\n";
+	$passed++;
+} else {
+	echo "  ✗ FAIL: processing should be locked with [completed, refunded]\n";
+	$failed++;
+}
+
+// 9d: Self-transitions are filtered out
+$rules = simulate_save(
+	[ 'processing' => '1' ],
+	[ 'processing' => [ 'processing' => '1', 'completed' => '1' ] ]
+);
+if ( $rules['processing'] === [ 'completed' ] ) {
+	echo "  ✓ Self-transition filtered out\n";
+	$passed++;
+} else {
+	echo "  ✗ FAIL: self-transition should be filtered\n";
+	$failed++;
+}
+echo "\n";
+
 // --- Summary ---
 $total = $passed + $failed;
 echo "=== Results: {$passed}/{$total} passed";

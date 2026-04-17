@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.1.0] - 2026-04-17
+
+### Added
+- **Rollback Lock column**: Explicit per-status checkbox in the transition matrix to mark a status as locked
+- **Dead-end support**: A locked status with no checked targets is now a dead end (e.g. Refunded) — previously lost on save
+- **Live row highlighting**: Toggling the Rollback Lock checkbox instantly updates the yellow row indicator via JS
+
+### Fixed
+- **Critical save bug**: Saving the settings page with no target checkboxes checked would silently unlock the status, making it unrestricted instead of a dead end. The new Rollback Lock checkbox decouples locking from target selection.
+
+### Changed
+- Save logic uses `wofc_lock[]` flags instead of inferring locked state from `wofc_matrix[]` presence
+- Removed hidden `wofc_locked_statuses[]` inputs — no longer needed
+- Updated description texts to explain Rollback Lock behavior
+
 ## [2.0.0] - 2026-04-16
 
 ### Added
